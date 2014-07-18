@@ -1,0 +1,252 @@
+<html>
+	<head>
+		<title>AlexLaird.net - Geocentral Location; Calculating Coordinates</title>
+		<style type="text/css">
+			#addresses, #coordinates {
+				height: 150px;
+				-moz-border-radius:6px;
+				-khtml-border-radius:6px;
+				-webkit-border-radius:6px;
+				border-radius:6px;
+				font-family:inherit;
+				font-size:inherit;
+			}
+			
+			#coordinates {
+				resize: none;
+			}
+			
+			#calculate-coordinates, #drop-markers {
+				margin-left: auto;
+				margin-right: auto;
+				float: none;
+			}
+			
+			#map_canvas {
+				width: 500px;
+				height: 400px;
+				border: 1px solid #666666;
+			}
+			
+			#map_canvas img {
+				max-width: none;
+			}
+		</style>
+
+		<script type="text/javascript" src="http://maps.googleapis.com/maps/api/js?key=<GOOGLE_MAPS_API_KEY>&sensor=false"></script>
+		<script type="text/javascript">
+			var map = new google.maps.LatLng(37.42310540, -122.08239880);
+			
+			var baseUrl = "http://<WEBSITE>/<BASE_DIR>";
+			var coordinates = [];
+			var markers = [];
+			var bounds = new google.maps.LatLngBounds();
+			var geoCentral = -1;
+			var intervalID = -1;
+			var iterator = 0;
+			var processing = false;
+			
+			function initialize()
+			{
+				var mapOptions = {
+					zoom: 12,
+					mapTypeId: google.maps.MapTypeId.ROADMAP,
+					center: map
+				};
+
+				map = new google.maps.Map(document.getElementById("map_canvas"), mapOptions);
+			}
+
+			function reInitialize(coordinates)
+			{
+				// Remove the current markers from the map, if they exist
+				for (i = 0; i < markers.length; ++i)
+				{
+					markers[i].setMap(null);
+				}
+
+				// Remove the geocentral marker, if it exists
+				if (geoCentral != -1)
+				{
+					geoCentral.setMap(null);
+				}
+				
+				markers = [];
+				calculateGeocentral(coordinates);	
+				bounds = new google.maps.LatLngBounds();
+			}
+
+			function sendAddress(addresses)
+			{
+				// If the iterator has reached the number of addresses in the list, clear the interval
+				if(iterator == addresses.length)
+				{
+					window.clearInterval(intervalID);
+					iterator = 0;
+					processing = false;
+				}
+				else
+				{
+					// If we use the Google Maps Coordinates API from JavaScript, the request comes from localhost,
+					// which Google does not like; call proxy.php so the request comes from server-side
+					jQuery.ajax({
+						url: baseUrl + "/proxy.php?address=" + addresses[iterator] + "&sensor=false",
+						success: function(data)
+						{
+							var location = data.split("\"location\"")[1].split("}")[0];
+							var lat = jQuery.trim(location.split("\"lat\" :")[1].split(",")[0]);
+							var lng = jQuery.trim(location.split("\"lng\" :")[1].split("}")[0]);
+							var start = jQuery("#coordinates").val() + "\n";
+							
+							if (jQuery("#coordinates").val() === "")
+							{
+								start = "";
+							}
+
+							// Add the newest coordinate to the list of calculated coordinates
+							jQuery("#coordinates").val(start + lat + ", " + lng);
+							coordinates[jQuery("#coordinates").val().split("\n").length - 1] = new google.maps.LatLng(lat, lng);
+
+							if (jQuery("#coordinates").val().split("\n").length == addresses.length)
+							{
+								jQuery("#coord-status").html("Done!");
+							}
+							else
+							{
+								jQuery("#coord-status").html("Calculating " + jQuery("#coordinates").val().split("\n").length + " of " + addresses.length + " coordinates ...");
+							}
+
+							// Scroll the text area to the bottom
+							var textarea  = jQuery("#coordinates");
+							textarea .scrollTop(textarea [0].scrollHeight - textarea .height());
+
+							iterator++;
+						}
+					});
+				}
+			}
+
+			function calculateCoordinates()
+			{
+				if(!processing)
+				{
+					if (intervalID != -1)
+					{
+						window.clearInterval(intervalID);
+						iterator = 0;
+					}
+					
+					if (jQuery("#addresses").val() === "")
+					{
+						jQuery("#coord-status").html("You must enter addresses to convert to coordinates.");
+					}
+					else
+					{
+						if (jQuery("#addresses").val().split("\n").length > 150)
+						{
+							jQuery("#coord-status").html("Sorry, you cannot process more than 150 addresses.");
+						}
+						else
+						{
+							jQuery("#coord-status").html("Calculating coordinates ...");
+							processing = true;
+						
+							// Reset variables, then set interval to send each address to the Google Maps Coordinates API for translation
+							var addresses = jQuery("#addresses").val().split("\n");
+							coordinates = [addresses.length];
+							jQuery("#coordinates").val("");
+							intervalID = window.setInterval(sendAddress, 1800, addresses);
+						}
+					}
+				}
+			}
+
+			function calculateGeocentral(coordinates)
+			{
+				var lat = 0;
+				var lng = 0;
+
+				// Add all the coordinates together
+				for (i = 0; i < coordinates.length; ++i)
+				{
+					lat = lat + coordinates[i].lat();
+					lng = lng + coordinates[i].lng();
+				}
+
+				// Divide for the average
+				lat = lat / coordinates.length;
+				lng = lng / coordinates.length;
+
+				// Geocentral location is marked with the flag image
+				var image = baseUrl + "/flag.png";
+				var coord = new google.maps.LatLng(lat, lng);
+
+				if (geoCentral != -1)
+				{
+					geoCentral.setMap(null);
+				}
+
+				geoCentral = new google.maps.Marker({
+					title: "Geocentral Location\n" + coord.toString(),
+					position: coord,
+					icon: image,
+					map: map,
+					draggable: false,
+					animation: google.maps.Animation.DROP
+				});
+			}
+
+			function dropMarkers()
+			{
+				if(!processing)
+				{
+					if (jQuery("#coordinates").val() === "")
+					{
+						jQuery("#coord-status").html("You must first click the <strong>Calculate Coordinates</strong> button.");
+					}
+					else
+					{
+						reInitialize(coordinates);
+						jQuery("#coord-status").html("Done! Geocentral coordinates: " + geoCentral.getPosition().toString());
+
+						var addresses = jQuery("#addresses").val().split("\n");
+						for (var i = 0; i < coordinates.length; i++)
+						{
+							markers.push(new google.maps.Marker({
+								title: addresses[i] + "\n" + coordinates[i].toString(),
+								position: coordinates[i],
+								map: map,
+								draggable: false,
+								animation: google.maps.Animation.DROP
+							}));
+
+							bounds.extend(coordinates[i]);
+							map.fitBounds(bounds);
+						}
+					}
+				}
+			}
+
+			jQuery(document).ready(function()
+			{
+				initialize();
+			});
+		</script>
+	</head>
+
+	<body>
+		<div align="center">
+			<textarea id="addresses" cols="100">1600 Amphitheatre Parkway, Mountain View, CA 94043
+970 University Ave, Los Gatos, CA 95032
+3000 Hanover St, Palo Alto, CA 94304
+1 Infinite Loop, Cupertino, CA 95014</textarea>
+			<button onclick="calculateCoordinates()" id="calculate-coordinates" name="calculate-coordinates">Calculate Coordinates</button>
+			<textarea id="coordinates" cols="100" disabled="disabled"></textarea>
+			<div id="coord-status">&nbsp;</div>
+			<br />
+
+			<button onclick="dropMarkers()" id="drop-markers" name="drop-markers">Drop Markers</button>
+			<div id="map_canvas"></div>
+		</div>
+	</body>
+</html>
